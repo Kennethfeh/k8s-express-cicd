@@ -39,10 +39,23 @@ jobs:
     - uses: actions/checkout@v4
     
     - name: Configure AWS credentials
+      id: configure_aws
       uses: aws-actions/configure-aws-credentials@v4
       with:
-        role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/GitHubActionsRole
+        role-to-assume: ${{ secrets.AWS_ROLE_ARN != '' && secrets.AWS_ROLE_ARN || format('arn:aws:iam::{0}:role/GitHubActionsRole', secrets.AWS_ACCOUNT_ID) }}
         aws-region: ${{ env.AWS_REGION }}
+
+    - name: Export AWS account ID
+      run: |
+        account_id="${{ steps.configure_aws.outputs['account-id'] }}"
+        if [ -z "$account_id" ]; then
+          account_id="${{ secrets.AWS_ACCOUNT_ID }}"
+        fi
+        if [ -z "$account_id" ]; then
+          echo "AWS account ID is required. Populate AWS_ROLE_ARN or AWS_ACCOUNT_ID secret." >&2
+          exit 1
+        fi
+        echo "AWS_ACCOUNT_ID=$account_id" >> "$GITHUB_ENV"
     
     - name: Login to Amazon ECR
       uses: aws-actions/amazon-ecr-login@v2
@@ -50,10 +63,10 @@ jobs:
     - name: Build and push Docker image
       working-directory: ./app
       run: |
-        docker build -t ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:$GITHUB_SHA .
-        docker build -t ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest .
-        docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:$GITHUB_SHA
-        docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest
+        docker build -t $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:$GITHUB_SHA .
+        docker build -t $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest .
+        docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:$GITHUB_SHA
+        docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest
 
   deploy:
     needs: build
@@ -64,10 +77,23 @@ jobs:
     - uses: actions/checkout@v4
     
     - name: Configure AWS credentials
+      id: configure_aws
       uses: aws-actions/configure-aws-credentials@v4
       with:
-        role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/GitHubActionsRole
+        role-to-assume: ${{ secrets.AWS_ROLE_ARN != '' && secrets.AWS_ROLE_ARN || format('arn:aws:iam::{0}:role/GitHubActionsRole', secrets.AWS_ACCOUNT_ID) }}
         aws-region: ${{ env.AWS_REGION }}
+
+    - name: Export AWS account ID
+      run: |
+        account_id="${{ steps.configure_aws.outputs['account-id'] }}"
+        if [ -z "$account_id" ]; then
+          account_id="${{ secrets.AWS_ACCOUNT_ID }}"
+        fi
+        if [ -z "$account_id" ]; then
+          echo "AWS account ID is required. Populate AWS_ROLE_ARN or AWS_ACCOUNT_ID secret." >&2
+          exit 1
+        fi
+        echo "AWS_ACCOUNT_ID=$account_id" >> "$GITHUB_ENV"
     
     - name: Update kubeconfig
       run: aws eks update-kubeconfig --region $AWS_REGION --name $EKS_CLUSTER
@@ -75,7 +101,7 @@ jobs:
     - name: Deploy to Kubernetes
       run: |
         # Update image in deployment
-        kubectl set image deployment/devops-app devops-app=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:$GITHUB_SHA -n devops-app
+        kubectl set image deployment/devops-app devops-app=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:$GITHUB_SHA -n devops-app
         
         # Wait for rollout to complete
         kubectl rollout status deployment/devops-app -n devops-app --timeout=300s
