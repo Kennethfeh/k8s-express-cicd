@@ -1,0 +1,19 @@
+apiVersion: v2
+name: devops-app
+description: A Helm chart for DevOps Project 3 Kubernetes application
+type: application
+version: 1.0.0
+appVersion: "3.0.0"
+
+keywords:
+  - devops
+  - nodejs
+  - kubernetes
+  - demo
+
+maintainers:
+  - name: DevOps engineer
+    email: kennethfeh@gmail.com
+
+sources:
+  - https://github.com/kennethfeh/k8s-express-cicd

@@ -1,0 +1,14 @@
+{
+  "name": "devops-demo-app-kubernetes",
+  "version": "3.0.0",
+  "description": "DevOps Project 3 - Kubernetes with EKS and Helm",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "echo \"Kubernetes-ready tests coming soon\" && exit 0"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}
+ 

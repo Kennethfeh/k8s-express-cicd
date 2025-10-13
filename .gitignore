@@ -1,0 +1,18 @@
+# Node dependencies
+app/node_modules/
+app/npm-debug.log
+
+# Terraform
+terraform/.terraform/
+terraform/terraform.tfstate*
+
+# OS files
+.DS_Store
+
+# Tool binaries
+hey
+hey_linux_amd64
+
+# Generated manifests
+aws-load-balancer-controller-service-account.yaml
+load-balancer-role-trust-policy.json
