@@ -38,24 +38,28 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: Configure AWS credentials
-      id: configure_aws
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        role-to-assume: ${{ secrets.AWS_ROLE_ARN != '' && secrets.AWS_ROLE_ARN || format('arn:aws:iam::{0}:role/GitHubActionsRole', secrets.AWS_ACCOUNT_ID) }}
-        aws-region: ${{ env.AWS_REGION }}
-
-    - name: Export AWS account ID
+    - name: Resolve AWS role
       run: |
-        account_id="${{ steps.configure_aws.outputs['account-id'] }}"
-        if [ -z "$account_id" ]; then
-          account_id="${{ secrets.AWS_ACCOUNT_ID }}"
-        fi
-        if [ -z "$account_id" ]; then
-          echo "AWS account ID is required. Populate AWS_ROLE_ARN or AWS_ACCOUNT_ID secret." >&2
+        if [ -n "${{ secrets.AWS_ROLE_ARN }}" ]; then
+          echo "ROLE_TO_ASSUME=${{ secrets.AWS_ROLE_ARN }}" >> "$GITHUB_ENV"
+          echo "AWS_ACCOUNT_ID=$(echo '${{ secrets.AWS_ROLE_ARN }}' | cut -d: -f5)" >> "$GITHUB_ENV"
+        elif [ -n "${{ secrets.AWS_ACCOUNT_ID }}" ]; then
+          echo "ROLE_TO_ASSUME=arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/GitHubActionsRole" >> "$GITHUB_ENV"
+          echo "AWS_ACCOUNT_ID=${{ secrets.AWS_ACCOUNT_ID }}" >> "$GITHUB_ENV"
+        else
+          echo "Neither AWS_ROLE_ARN nor AWS_ACCOUNT_ID secret is set." >&2
           exit 1
         fi
-        echo "AWS_ACCOUNT_ID=$account_id" >> "$GITHUB_ENV"
+        if [ -z "$AWS_ACCOUNT_ID" ]; then
+          echo "Failed to derive AWS account ID." >&2
+          exit 1
+        fi
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ env.ROLE_TO_ASSUME }}
+        aws-region: ${{ env.AWS_REGION }}
     
     - name: Login to Amazon ECR
       uses: aws-actions/amazon-ecr-login@v2
@@ -76,24 +80,28 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: Configure AWS credentials
-      id: configure_aws
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        role-to-assume: ${{ secrets.AWS_ROLE_ARN != '' && secrets.AWS_ROLE_ARN || format('arn:aws:iam::{0}:role/GitHubActionsRole', secrets.AWS_ACCOUNT_ID) }}
-        aws-region: ${{ env.AWS_REGION }}
-
-    - name: Export AWS account ID
+    - name: Resolve AWS role
       run: |
-        account_id="${{ steps.configure_aws.outputs['account-id'] }}"
-        if [ -z "$account_id" ]; then
-          account_id="${{ secrets.AWS_ACCOUNT_ID }}"
-        fi
-        if [ -z "$account_id" ]; then
-          echo "AWS account ID is required. Populate AWS_ROLE_ARN or AWS_ACCOUNT_ID secret." >&2
+        if [ -n "${{ secrets.AWS_ROLE_ARN }}" ]; then
+          echo "ROLE_TO_ASSUME=${{ secrets.AWS_ROLE_ARN }}" >> "$GITHUB_ENV"
+          echo "AWS_ACCOUNT_ID=$(echo '${{ secrets.AWS_ROLE_ARN }}' | cut -d: -f5)" >> "$GITHUB_ENV"
+        elif [ -n "${{ secrets.AWS_ACCOUNT_ID }}" ]; then
+          echo "ROLE_TO_ASSUME=arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/GitHubActionsRole" >> "$GITHUB_ENV"
+          echo "AWS_ACCOUNT_ID=${{ secrets.AWS_ACCOUNT_ID }}" >> "$GITHUB_ENV"
+        else
+          echo "Neither AWS_ROLE_ARN nor AWS_ACCOUNT_ID secret is set." >&2
           exit 1
         fi
-        echo "AWS_ACCOUNT_ID=$account_id" >> "$GITHUB_ENV"
+        if [ -z "$AWS_ACCOUNT_ID" ]; then
+          echo "Failed to derive AWS account ID." >&2
+          exit 1
+        fi
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ env.ROLE_TO_ASSUME }}
+        aws-region: ${{ env.AWS_REGION }}
     
     - name: Update kubeconfig
       run: aws eks update-kubeconfig --region $AWS_REGION --name $EKS_CLUSTER
