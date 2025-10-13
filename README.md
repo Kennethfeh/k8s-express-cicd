@@ -1,148 +1,125 @@
 # DevOps Project 3 — Kubernetes on AWS EKS
 
-This repository is the third milestone in my DevOps journey. I took the Node.js service from the containers project and built out everything needed to run it on Amazon EKS: infrastructure-as-code, Kubernetes packaging, CI/CD, and the operational guardrails you would expect in production.
+I built this project to prove end-to-end ownership of a cloud-native platform: from raw infrastructure to a live service behind an AWS Application Load Balancer. The starting point was the Node.js app from my containers project; everything else—Terraform, Kubernetes assets, Helm packaging, IAM, automation, and validation—was created here.
 
 ---
 
-## Highlights
+## Overview
 
-- Provisioned an EKS cluster with Terraform: VPC, subnets, IAM roles, node group (t3.micro by default), ECR repository, and OIDC provider.
-- Refined the Express API so it exposes `/health`, `/ready`, `/live`, `/metrics`, and synthetic load endpoints that exercise probes and autoscaling.
-- Packaged the workloads two ways—raw manifests for quick apply cycles and a Helm chart for repeatable releases.
-- Automated installation of the AWS Load Balancer Controller plus all required IAM so an Application Load Balancer fronts the service.
-- Patched Metrics Server with the EKS-friendly flags and verified Horizontal Pod Autoscaling (1–3 replicas) with load tests using `hey`.
-- Built a GitHub Actions pipeline that tests, builds, pushes to ECR, rolls out to EKS, then smoke-tests the ALB before marking the deployment green.
+- **Stack:** Amazon EKS, Terraform, Kubernetes, Helm, Node.js/Express, GitHub Actions, AWS Load Balancer Controller.
+- **Objective:** run a real application on EKS with production-style health checks, autoscaling, ingress, and CI/CD.
+- **Outcome:** a reproducible platform that anyone with AWS credentials can stand up (and destroy) in a few minutes.
 
 ---
 
-## Architecture at a Glance
+## Infrastructure as Code (terraform/)
 
-```
-Developer → GitHub Actions → Amazon ECR → Amazon EKS
-                                  │
-                            AWS Load Balancer Controller → ALB → Users
-```
+Terraform provisions everything the cluster needs:
 
-- Terraform sets up networking, security, and cluster resources end to end.
-- Traffic flows from the ALB to the ingress, then through the service to the pods.
-- Metrics Server + HPA watch CPU/memory and scale the deployment between one and three replicas under load.
-- CI/CD pushes immutable images to ECR and performs rolling updates with rollout verification.
+- VPC with public/private subnets, routing, and NAT gateways.
+- IAM roles/policies for the EKS control plane, node group, GitHub Actions, and the ALB controller.
+- EKS cluster plus a managed node group (default `t3.micro` for free-tier alignment, but scalable for load tests).
+- Amazon ECR repository and an OIDC provider so GitHub Actions can assume AWS roles without static credentials.
+
+Each apply prints the kubeconfig command and ECR URL; `terraform destroy` tears down the stack when I’m finished to avoid charges.
 
 ---
 
-## Repository Map
+## Application & Packaging (app/, kubernetes/, helm/)
 
-| Path | Purpose |
-| --- | --- |
-| `app/` | Node.js 18 Express service, Dockerfile, placeholder tests. |
-| `helm/devops-app-chart/` | Helm chart (values, helpers, templated manifests). |
-| `kubernetes/` | Raw manifests for namespace, deployment, service, HPA, ingress. |
-| `scripts/` | Utility scripts, including the ALB controller installer. |
-| `terraform/` | Terraform configuration for networking, EKS, node groups, IAM, ECR. |
-| `.github/workflows/deploy.yml` | GitHub Actions pipeline (test → build/push → deploy + smoke tests). |
+- `app/` contains the Express service with endpoints for `/health`, `/ready`, `/live`, `/metrics`, and synthetic load (`/load/<n>`). The Dockerfile produces a small, non-root image.
+- `kubernetes/` holds raw manifests—namespace, deployment, service, HPA, and ingress—for direct `kubectl apply` workflows.
+- `helm/devops-app-chart/` mirrors those workloads as a Helm chart so I can install or upgrade with overridable values.
 
 ---
 
-## Provisioning the Platform
+## Platform Automation (scripts/)
 
-```bash
-cd terraform
-terraform init
-terraform apply            # creates VPC, EKS, node group, ECR, IAM, etc.
-
-# Optional: give the cluster more room for load tests
-terraform apply -var 'node_desired_size=2' -var 'node_max_size=3'
-```
-
-Outputs include the cluster endpoint, kubeconfig command, and ECR repository URL. Run `terraform destroy` when you are finished to avoid surprise AWS costs.
+- `install-alb-controller.sh` creates/updates the IAM policy, bootstraps the AWS Load Balancer Controller, and annotates the Kubernetes service account.
+- Metrics Server receives the EKS-required flags (`--kubelet-insecure-tls`, `--kubelet-preferred-address-types=InternalIP`) via a patch so the HPA can access CPU and memory metrics.
+- The HPA scales between one and three replicas. I confirmed behaviour by driving the `/load/10` route with `hey` while watching `kubectl get hpa`.
 
 ---
 
-## Building & Publishing the App
+## CI/CD ( .github/workflows/deploy.yml )
 
-```bash
-cd app
-npm ci
-npm test
+GitHub Actions runs three stages whenever I push:
 
-ECR_URL=$(terraform -chdir=../terraform output -raw ecr_repository_url)
-aws ecr get-login-password --region us-east-1 \
-  | docker login --username AWS --password-stdin "$ECR_URL"
+1. Install dependencies and run tests (placeholder today, ready for unit tests tomorrow).
+2. On `main`, assume the GitHub Actions role, log in to ECR, build/push the image tagged with the commit SHA and `latest`.
+3. Update kubeconfig, set the deployment image, wait for the rollout, and curl the ALB `/health` and `/` endpoints before declaring success.
 
-docker build -t "$ECR_URL:latest" .
-docker push "$ECR_URL:latest"
-```
+Required secrets:
 
----
-
-## Deploying to Kubernetes
-
-```bash
-# Namespace + workloads (manifest path)
-kubectl apply -f kubernetes/namespace.yaml
-kubectl apply -f kubernetes/deployment.yaml
-kubectl apply -f kubernetes/service.yaml
-kubectl apply -f kubernetes/hpa.yaml
-kubectl apply -f kubernetes/ingress.yaml
-
-# Load balancer controller + metrics server tweaks
-./scripts/install-alb-controller.sh
-kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
-kubectl patch deployment metrics-server -n kube-system \
-  --type=json \
-  -p='[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"},
-       {"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-preferred-address-types=InternalIP"}]'
-
-# Sanity checks
-kubectl get pods -n devops-app
-kubectl describe hpa devops-app-hpa -n devops-app
-kubectl get ingress -n devops-app
-```
-
-**Helm alternative:** `helm install devops-app ./helm/devops-app-chart -n devops-app --create-namespace`
-
----
-
-## CI/CD Workflow Highlights
-
-1. Run Node.js tests on every push.
-2. On `main`, assume the GitHub Actions role, log in to ECR, build/push images tagged with the SHA and `latest`.
-3. Update kubeconfig, set the image on the deployment, wait for rollout, then curl the ALB `/health` and root endpoints.
-
-Secrets required:
-
-| Secret | Why it’s needed |
+| Secret | Purpose |
 | --- | --- |
 | `AWS_ACCOUNT_ID` | Builds the ECR image URL. |
-| `AWS_ROLE_ARN` (optional) | Use a fixed IAM role if you prefer to pass the ARN rather than the account ID. |
+| `AWS_ROLE_ARN` (optional) | Explicit ARN if I don’t want to derive the role inside the workflow. |
 
 ---
 
-## Observability & Testing
+## Observability & Validation
 
-I exposed enough surface area to prove that the platform is working:
+I give myself the same signals I’d expect in production:
 
-- `/health`, `/ready`, and `/live` drive both Kubernetes probes and ALB health checks.
-- `/metrics` exports simple Prometheus gauges/counters so instrumentation can be tested quickly.
-- Synthetic load endpoints (`/load/5`, `/load/10`, etc.) let me drive the HPA with `hey -z 120s -c 10 http://$ALB_HOST/load/10`.
-- Routine cluster checks (`kubectl get pods -n kube-system`, `kubectl logs …`) give quick assurance that controllers and metrics are healthy.
-
----
-
-## Cleanup Checklist
-
-- `terraform destroy` to remove the AWS resources (VPC, ALB, EKS, NAT gateways, etc.).
-- `helm uninstall devops-app -n devops-app` or `kubectl delete namespace devops-app` if you deployed manually.
-- Remove any temporary tooling (`rm hey*`) from your workstation.
+- `/health`, `/ready`, and `/live` feed Kubernetes probes and ALB health checks.
+- `/metrics` exposes Prometheus-style counters and gauges to prove telemetry wiring.
+- `hey -z 120s -c 10 http://$ALB_HOST/load/10` exercises the HPA and validates the cluster under stress.
+- Routine commands (`kubectl get pods -n kube-system`, `kubectl logs …`) verify controllers and metrics after every change.
 
 ---
 
-## Notes for Recruiters
+## Run It Yourself
 
-- I owned the full delivery path here: infrastructure, application changes, automation, and verification.
-- IAM, OIDC, and the load balancer controller are scripted so the AWS integration is repeatable.
-- Probes, Metrics Server tweaks, and the HPA show that I think about operations and scaling, not just “it runs on my machine”.
-- The Helm chart mirrors the raw manifests, giving teams an easy migration path from ad-hoc deployments to templates.
-- GitHub Actions performs smoke tests against the ALB before the job turns green—matching the rollout hygiene I expect in production.
+```bash
+# 1. Provision infrastructure
++ cd terraform
++ terraform init
++ terraform apply
 
-Anyone with an AWS account and GitHub credentials can clone this repo and reproduce the platform by following the steps above.
+# 2. Build and publish the application
++ cd ../app
++ npm ci && npm test
++ ECR_URL=$(terraform -chdir=../terraform output -raw ecr_repository_url)
++ aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin "$ECR_URL"
++ docker build -t "$ECR_URL:latest" .
++ docker push "$ECR_URL:latest"
+
+# 3. Deploy to the cluster (manifests path)
++ cd ..
++ kubectl apply -f kubernetes/namespace.yaml
++ kubectl apply -f kubernetes/deployment.yaml
++ kubectl apply -f kubernetes/service.yaml
++ kubectl apply -f kubernetes/hpa.yaml
++ kubectl apply -f kubernetes/ingress.yaml
++ ./scripts/install-alb-controller.sh
++ kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
++ kubectl patch deployment metrics-server -n kube-system \
++     --type=json \
++     -p='[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"},
++          {"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-preferred-address-types=InternalIP"}]'
++ kubectl get pods -n devops-app
++ kubectl get ingress -n devops-app
+```
+
+Prefer Helm? `helm install devops-app ./helm/devops-app-chart -n devops-app --create-namespace` delivers the same resources.
+
+---
+
+## Tear Down
+
+- `terraform destroy` removes the AWS footprint (EKS, ALB, NAT gateways, VPC, etc.).
+- `helm uninstall devops-app -n devops-app` or `kubectl delete namespace devops-app` clears the workloads.
+- Delete any local helpers such as the `hey` binary.
+
+---
+
+## Why This Matters (for recruiters and hiring managers)
+
+- I own the full lifecycle: infra, application changes, automation, validation, and cleanup.
+- AWS integration is scripted end-to-end—no manual IAM tweaks or guessing which permissions are required.
+- Operability is built in: probes, metrics, autoscaling, and smoke tests run before a deployment is considered healthy.
+- Helm and raw manifests live side by side so teams can evolve from manual changes to templated releases without a rewrite.
+- The CI/CD pipeline doesn’t stop at “docker push”; it validates the live service fronted by an AWS ALB.
+
+Clone the repo, follow the steps above, and you can see the same platform running in your own AWS account.
