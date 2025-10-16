@@ -41,12 +41,14 @@ jobs:
     
     - name: Resolve AWS role
       run: |
+        ROLE_TO_ASSUME=""
+        AWS_ACCOUNT_ID=""
         if [ -n "${{ secrets.AWS_ROLE_ARN }}" ]; then
-          echo "ROLE_TO_ASSUME=${{ secrets.AWS_ROLE_ARN }}" >> "$GITHUB_ENV"
-          echo "AWS_ACCOUNT_ID=$(echo '${{ secrets.AWS_ROLE_ARN }}' | cut -d: -f5)" >> "$GITHUB_ENV"
+          ROLE_TO_ASSUME="${{ secrets.AWS_ROLE_ARN }}"
+          AWS_ACCOUNT_ID=$(echo "$ROLE_TO_ASSUME" | cut -d: -f5)
         elif [ -n "${{ secrets.AWS_ACCOUNT_ID }}" ]; then
-          echo "ROLE_TO_ASSUME=arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/GitHubActionsRole" >> "$GITHUB_ENV"
-          echo "AWS_ACCOUNT_ID=${{ secrets.AWS_ACCOUNT_ID }}" >> "$GITHUB_ENV"
+          AWS_ACCOUNT_ID="${{ secrets.AWS_ACCOUNT_ID }}"
+          ROLE_TO_ASSUME="arn:aws:iam::${AWS_ACCOUNT_ID}:role/GitHubActionsRole"
         else
           echo "Neither AWS_ROLE_ARN nor AWS_ACCOUNT_ID secret is set." >&2
           exit 1
@@ -55,6 +57,8 @@ jobs:
           echo "Failed to derive AWS account ID." >&2
           exit 1
         fi
+        echo "ROLE_TO_ASSUME=$ROLE_TO_ASSUME" >> "$GITHUB_ENV"
+        echo "AWS_ACCOUNT_ID=$AWS_ACCOUNT_ID" >> "$GITHUB_ENV"
     
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
@@ -83,12 +87,14 @@ jobs:
     
     - name: Resolve AWS role
       run: |
+        ROLE_TO_ASSUME=""
+        AWS_ACCOUNT_ID=""
         if [ -n "${{ secrets.AWS_ROLE_ARN }}" ]; then
-          echo "ROLE_TO_ASSUME=${{ secrets.AWS_ROLE_ARN }}" >> "$GITHUB_ENV"
-          echo "AWS_ACCOUNT_ID=$(echo '${{ secrets.AWS_ROLE_ARN }}' | cut -d: -f5)" >> "$GITHUB_ENV"
+          ROLE_TO_ASSUME="${{ secrets.AWS_ROLE_ARN }}"
+          AWS_ACCOUNT_ID=$(echo "$ROLE_TO_ASSUME" | cut -d: -f5)
         elif [ -n "${{ secrets.AWS_ACCOUNT_ID }}" ]; then
-          echo "ROLE_TO_ASSUME=arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/GitHubActionsRole" >> "$GITHUB_ENV"
-          echo "AWS_ACCOUNT_ID=${{ secrets.AWS_ACCOUNT_ID }}" >> "$GITHUB_ENV"
+          AWS_ACCOUNT_ID="${{ secrets.AWS_ACCOUNT_ID }}"
+          ROLE_TO_ASSUME="arn:aws:iam::${AWS_ACCOUNT_ID}:role/GitHubActionsRole"
         else
           echo "Neither AWS_ROLE_ARN nor AWS_ACCOUNT_ID secret is set." >&2
           exit 1
@@ -97,6 +103,8 @@ jobs:
           echo "Failed to derive AWS account ID." >&2
           exit 1
         fi
+        echo "ROLE_TO_ASSUME=$ROLE_TO_ASSUME" >> "$GITHUB_ENV"
+        echo "AWS_ACCOUNT_ID=$AWS_ACCOUNT_ID" >> "$GITHUB_ENV"
     
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
