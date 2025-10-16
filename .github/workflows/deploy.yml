@@ -44,8 +44,18 @@ jobs:
         ROLE_TO_ASSUME=""
         AWS_ACCOUNT_ID=""
         if [ -n "${{ secrets.AWS_ROLE_ARN }}" ]; then
-          ROLE_TO_ASSUME="${{ secrets.AWS_ROLE_ARN }}"
-          AWS_ACCOUNT_ID=$(echo "$ROLE_TO_ASSUME" | cut -d: -f5)
+          RAW_ROLE="${{ secrets.AWS_ROLE_ARN }}"
+          if echo "$RAW_ROLE" | grep -q '^arn:'; then
+            ROLE_TO_ASSUME="$RAW_ROLE"
+            AWS_ACCOUNT_ID=$(echo "$ROLE_TO_ASSUME" | cut -d: -f5)
+          else
+            if [ -z "${{ secrets.AWS_ACCOUNT_ID }}" ]; then
+              echo "AWS_ROLE_ARN must be a full ARN or AWS_ACCOUNT_ID must also be provided." >&2
+              exit 1
+            fi
+            AWS_ACCOUNT_ID="${{ secrets.AWS_ACCOUNT_ID }}"
+            ROLE_TO_ASSUME="arn:aws:iam::${AWS_ACCOUNT_ID}:role/$RAW_ROLE"
+          fi
         elif [ -n "${{ secrets.AWS_ACCOUNT_ID }}" ]; then
           AWS_ACCOUNT_ID="${{ secrets.AWS_ACCOUNT_ID }}"
           ROLE_TO_ASSUME="arn:aws:iam::${AWS_ACCOUNT_ID}:role/GitHubActionsRole"
@@ -53,8 +63,8 @@ jobs:
           echo "Neither AWS_ROLE_ARN nor AWS_ACCOUNT_ID secret is set." >&2
           exit 1
         fi
-        if [ -z "$AWS_ACCOUNT_ID" ]; then
-          echo "Failed to derive AWS account ID." >&2
+        if ! echo "$AWS_ACCOUNT_ID" | grep -Eq '^[0-9]{12}$'; then
+          echo "Failed to derive a valid 12-digit AWS account ID." >&2
           exit 1
         fi
         echo "ROLE_TO_ASSUME=$ROLE_TO_ASSUME" >> "$GITHUB_ENV"
@@ -90,8 +100,18 @@ jobs:
         ROLE_TO_ASSUME=""
         AWS_ACCOUNT_ID=""
         if [ -n "${{ secrets.AWS_ROLE_ARN }}" ]; then
-          ROLE_TO_ASSUME="${{ secrets.AWS_ROLE_ARN }}"
-          AWS_ACCOUNT_ID=$(echo "$ROLE_TO_ASSUME" | cut -d: -f5)
+          RAW_ROLE="${{ secrets.AWS_ROLE_ARN }}"
+          if echo "$RAW_ROLE" | grep -q '^arn:'; then
+            ROLE_TO_ASSUME="$RAW_ROLE"
+            AWS_ACCOUNT_ID=$(echo "$ROLE_TO_ASSUME" | cut -d: -f5)
+          else
+            if [ -z "${{ secrets.AWS_ACCOUNT_ID }}" ]; then
+              echo "AWS_ROLE_ARN must be a full ARN or AWS_ACCOUNT_ID must also be provided." >&2
+              exit 1
+            fi
+            AWS_ACCOUNT_ID="${{ secrets.AWS_ACCOUNT_ID }}"
+            ROLE_TO_ASSUME="arn:aws:iam::${AWS_ACCOUNT_ID}:role/$RAW_ROLE"
+          fi
         elif [ -n "${{ secrets.AWS_ACCOUNT_ID }}" ]; then
           AWS_ACCOUNT_ID="${{ secrets.AWS_ACCOUNT_ID }}"
           ROLE_TO_ASSUME="arn:aws:iam::${AWS_ACCOUNT_ID}:role/GitHubActionsRole"
@@ -99,8 +119,8 @@ jobs:
           echo "Neither AWS_ROLE_ARN nor AWS_ACCOUNT_ID secret is set." >&2
           exit 1
         fi
-        if [ -z "$AWS_ACCOUNT_ID" ]; then
-          echo "Failed to derive AWS account ID." >&2
+        if ! echo "$AWS_ACCOUNT_ID" | grep -Eq '^[0-9]{12}$'; then
+          echo "Failed to derive a valid 12-digit AWS account ID." >&2
           exit 1
         fi
         echo "ROLE_TO_ASSUME=$ROLE_TO_ASSUME" >> "$GITHUB_ENV"
